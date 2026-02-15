@@ -17,8 +17,20 @@ import java.util.zip.GZIPOutputStream
 
 class HTTPClient(
     private val writeKey: String,
-    private val requestFactory: RequestFactory = RequestFactory()
+    private val requestFactory: RequestFactory = RequestFactory(),
+    private val customTrackUrl: URL? = null
 ) {
+
+    /**
+     * Custom track URL only if non-null, non-empty, and valid (has host). Otherwise null so we fall back to default Segment behavior.
+     */
+    internal val effectiveCustomTrackUrl: URL?
+        get() {
+            val url = customTrackUrl ?: return null
+            val host = url.host ?: return null
+            if (host.isBlank() || url.toExternalForm().trim().isEmpty()) return null
+            return url
+        }
 
     fun settings(cdnHost: String): Connection {
         val connection: HttpURLConnection = requestFactory.settings(cdnHost, writeKey)
@@ -28,6 +40,14 @@ class HTTPClient(
     fun upload(apiHost: String): Connection {
         val connection: HttpURLConnection = requestFactory.upload(apiHost)
         return connection.createPostConnection()
+    }
+
+    /**
+     * Opens a POST connection to the custom track URL with X-Write-Key and application/json. Used only when [effectiveCustomTrackUrl] is set.
+     */
+    internal fun uploadToCustomTrackUrl(): HttpURLConnection? {
+        val url = effectiveCustomTrackUrl ?: return null
+        return requestFactory.uploadToCustomTrackUrl(url, writeKey)
     }
 
     /**
@@ -167,6 +187,20 @@ open class RequestFactory(
         val connection: HttpURLConnection = openConnection("https://$apiHost/b")
         connection.setRequestProperty("Content-Type", "text/plain")
         connection.setRequestProperty("Content-Encoding", "gzip")
+        connection.doOutput = true
+        connection.setChunkedStreamingMode(0)
+        return connection
+    }
+
+    /**
+     * Opens a POST connection to a custom track URL. Used only when Configuration.customTrackUrl is set.
+     * Sets Content-Type application/json and X-Write-Key. Caller writes event JSON body and closes the connection.
+     */
+    open fun uploadToCustomTrackUrl(customTrackUrl: URL, writeKey: String): HttpURLConnection {
+        val connection: HttpURLConnection = openConnection(customTrackUrl.toString())
+        connection.requestMethod = "POST"
+        connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        connection.setRequestProperty("X-Write-Key", writeKey)
         connection.doOutput = true
         connection.setChunkedStreamingMode(0)
         return connection

@@ -6,16 +6,28 @@ import com.segment.analytics.kotlin.core.platform.plugins.logger.log
 import com.segment.analytics.kotlin.core.platform.plugins.logger.segmentLog
 import com.segment.analytics.kotlin.core.platform.policies.FlushPolicy
 import com.segment.analytics.kotlin.core.utilities.EncodeDefaultsJson
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.Channel.Factory.UNLIMITED
 import kotlinx.coroutines.channels.consumeEach
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.io.BufferedReader
+import java.io.IOException
+import java.io.InputStreamReader
 
 open class EventPipeline(
     private val analytics: Analytics,
@@ -29,7 +41,19 @@ open class EventPipeline(
 
     private var uploadChannel: Channel<String>
 
-    protected open val httpClient: HTTPClient = HTTPClient(apiKey, analytics.configuration.requestFactory)
+    protected open val httpClient: HTTPClient = HTTPClient(
+        apiKey,
+        analytics.configuration.requestFactory,
+        analytics.configuration.customTrackUrl
+    )
+
+    /** File paths currently being sent via customTrackUrl (one POST per event). Prevents duplicate send when a later flush runs before completion. */
+    private val customTrackFileUrlsInFlight = mutableSetOf<String>()
+    private val customTrackInFlightMutex = Mutex()
+
+    private companion object {
+        const val MAX_CONCURRENT_EVENT_UPLOADS = 20
+    }
 
     protected open val storage get() = analytics.storage
 
@@ -130,25 +154,40 @@ open class EventPipeline(
             }
 
             val fileUrlList = parseFilePaths(storage.read(Storage.Constants.Events))
-            for (url in fileUrlList) {
-                // upload event file
-                var shouldCleanup = true
-                storage.readAsStream(url)?.use { data ->
-                    try {
-                        val connection = httpClient.upload(apiHost)
-                        connection.outputStream?.let {
-                            // Write the payloads into the OutputStream
-                            data.copyTo(connection.outputStream)
-                            connection.outputStream.close()
+            val inFlight = customTrackInFlightMutex.withLock { customTrackFileUrlsInFlight.toSet() }
+            val filesToProcess = fileUrlList.filter { it !in inFlight }
 
-                            // Upload the payloads.
-                            connection.close()
-                        }
-                        // Cleanup uploaded payloads
-                        analytics.log("$logTag uploaded $url")
+            for (url in filesToProcess) {
+                val useCustomTrackUrl = httpClient.effectiveCustomTrackUrl != null
+                if (useCustomTrackUrl) {
+                    customTrackInFlightMutex.withLock { customTrackFileUrlsInFlight.add(url) }
+                }
+
+                var shouldCleanup = true
+                if (useCustomTrackUrl) {
+                    try {
+                        sendBatchAsOneRequestPerEvent(url)
+                        analytics.log("$logTag uploaded $url (custom track)")
                     } catch (e: Exception) {
                         analytics.reportInternalError(e)
                         shouldCleanup = handleUploadException(e, url)
+                    } finally {
+                        customTrackInFlightMutex.withLock { customTrackFileUrlsInFlight.remove(url) }
+                    }
+                } else {
+                    storage.readAsStream(url)?.use { data ->
+                        try {
+                            val connection = httpClient.upload(apiHost)
+                            connection.outputStream?.let {
+                                data.copyTo(connection.outputStream)
+                                connection.outputStream.close()
+                                connection.close()
+                            }
+                            analytics.log("$logTag uploaded $url")
+                        } catch (e: Exception) {
+                            analytics.reportInternalError(e)
+                            shouldCleanup = handleUploadException(e, url)
+                        }
                     }
                 }
 
@@ -156,6 +195,45 @@ open class EventPipeline(
                     storage.removeFile(url)
                 }
             }
+        }
+    }
+
+    /**
+     * Sends each event in the batch as a separate POST to customTrackUrl (body = single event JSON).
+     * Called only when customTrackUrl is set; does not affect the default Segment path.
+     */
+    private suspend fun sendBatchAsOneRequestPerEvent(fileUrl: String) = withContext(networkIODispatcher) {
+        if (httpClient.uploadToCustomTrackUrl() == null) throw IOException("Custom track URL not configured")
+        val fileContent = withContext(fileIODispatcher) {
+            storage.readAsStream(fileUrl)?.use { stream ->
+                BufferedReader(InputStreamReader(stream)).readText()
+            } ?: throw IOException("Failed to read batch file: $fileUrl")
+        }
+        val json = Json.parseToJsonElement(fileContent).jsonObject
+        val batch = json["batch"]?.jsonArray ?: return@withContext
+        if (batch.isEmpty()) return@withContext
+
+        val semaphore = Semaphore(MAX_CONCURRENT_EVENT_UPLOADS)
+        coroutineScope {
+            batch.map { element ->
+                async {
+                    semaphore.withPermit {
+                        val eventBody = element.toString()
+                        val conn = httpClient.uploadToCustomTrackUrl() ?: return@withPermit
+                        try {
+                            conn.outputStream.use { os ->
+                                os.write(eventBody.toByteArray(Charsets.UTF_8))
+                            }
+                            val code = conn.responseCode
+                            if (code >= 300) {
+                                throw HTTPException(code, conn.responseMessage, null, conn.headerFields)
+                            }
+                        } finally {
+                            conn.disconnect()
+                        }
+                    }
+                }
+            }.awaitAll()
         }
     }
 

@@ -2,6 +2,7 @@ package com.segment.analytics.kotlin.core.compat
 
 import com.segment.analytics.kotlin.core.Configuration
 import com.segment.analytics.kotlin.core.RequestFactory
+import java.net.URL
 
 /**
  * This class serves as a helper class for Java compatibility, which makes the
@@ -34,6 +35,18 @@ class ConfigurationBuilder (writeKey: String) {
     fun setCdnHost(cdnHost: String) = apply { configuration.cdnHost = cdnHost}
 
     fun setRequestFactory(requestFactory: RequestFactory) = apply { configuration.requestFactory = requestFactory }
+
+    /**
+     * Use this URL only for sending event batches. Settings and all other requests keep using Segment's default hosts.
+     * @param url full URL, or null. Empty or invalid host is stored as null.
+     */
+    fun setCustomTrackUrl(url: URL?) = apply { configuration.customTrackUrl(url) }
+
+    /**
+     * Use this URL only for sending event batches. Settings and all other requests keep using Segment's default hosts.
+     * @param urlString full URL string. Empty or invalid is stored as null.
+     */
+    fun setCustomTrackUrl(urlString: String?) = apply { configuration.customTrackUrl(urlString) }
 
     fun build() = configuration
 }
