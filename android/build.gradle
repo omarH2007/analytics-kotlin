@@ -79,10 +79,3 @@ dependencies {
 apply from: rootProject.file('gradle/artifacts-android.gradle')
 apply from: rootProject.file('gradle/mvn-publish.gradle')
 apply from: rootProject.file('gradle/codecov.gradle')
-
-// Only configure signing task dependencies when not running on JitPack
-if (!System.getenv('JITPACK')) {
-    tasks.matching { it.name == 'signReleasePublication' }.configureEach {
-        dependsOn("bundleReleaseAar")
-    }
-}

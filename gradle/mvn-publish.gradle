@@ -1,81 +1,75 @@
 apply plugin: 'maven-publish'
 apply plugin: 'signing'
 
-publishing {
-    publications {
-        release(MavenPublication) {
-            // The coordinates of the library, being set from variables that
-            // we'll set up in a moment
-            groupId GROUP
-            artifactId POM_ARTIFACT_ID
-            version getVersionName()
+afterEvaluate {
+    publishing {
+        publications {
+            release(MavenPublication) {
+                groupId GROUP
+                artifactId POM_ARTIFACT_ID
+                version getVersionName()
 
-            if (project.getName() == "android") {
-                artifact("$buildDir/outputs/aar/${project.getName()}-release.aar")
-            }
-            else {
-                artifact("$buildDir/libs/${project.getName()}-${version}.jar")
-            }
-            artifact sourcesJar
-            artifact javadocJar
-
-            // Self-explanatory metadata for the most part
-            pom {
-                name = POM_NAME
-                packaging = POM_PACKAGING
-                description = POM_DESCRIPTION
-                url = POM_URL
-
-                licenses {
-                    license {
-                        name = POM_LICENCE_NAME
-                        url = POM_LICENCE_URL
-                        distribution = POM_LICENCE_DIST
-                    }
+                // Use component-based publishing for proper class resolution
+                if (project.plugins.hasPlugin('com.android.library')) {
+                    from components.release
+                } else {
+                    from components.java
                 }
 
-                developers {
-                    developer {
-                        id = POM_DEVELOPER_ID
-                        name = POM_DEVELOPER_NAME
-                    }
-                }
+                // Add sources and javadoc
+                artifact sourcesJar
+                artifact javadocJar
 
-                scm {
-                    url = POM_SCM_URL
-                    connection = POM_SCM_CONNECTION
-                    developerConnection = POM_SCM_DEV_CONNECTION
-                }
-                // A slight fix so that the generated POM will include any transitive dependencies
-                // that the library builds upon
-                withXml {
-                    def dependenciesNode = asNode().appendNode('dependencies')
-                    ext.addDependency = { Dependency dep, String scope ->
-                        if (dep.name == null || dep.name == "unspecified")
-                            return // invalid dependencies should be ignored
+                pom {
+                    name = POM_NAME
+                    packaging = POM_PACKAGING
+                    description = POM_DESCRIPTION
+                    url = POM_URL
 
-                        final dependencyNode = dependenciesNode.appendNode('dependency')
-                        dependencyNode.appendNode('artifactId', dep.name)
-
-                        // Handle project dependencies (like api project(':core'))
-                        if (dep.group == null || dep.version == null || dep.version == 'unspecified') {
-                            dependencyNode.appendNode('groupId', GROUP)
-                            dependencyNode.appendNode('version', getVersionName())
-                        } else {
-                            dependencyNode.appendNode('groupId', dep.group)
-                            dependencyNode.appendNode('version', dep.version)
+                    licenses {
+                        license {
+                            name = POM_LICENCE_NAME
+                            url = POM_LICENCE_URL
+                            distribution = POM_LICENCE_DIST
                         }
-                        dependencyNode.appendNode('scope', scope)
                     }
 
-                    configurations.api.getDependencies().each { dep -> addDependency(dep, "compile") }
-                    configurations.implementation.getDependencies().each { dep -> addDependency(dep, "runtime") }
+                    developers {
+                        developer {
+                            id = POM_DEVELOPER_ID
+                            name = POM_DEVELOPER_NAME
+                        }
+                    }
+
+                    scm {
+                        url = POM_SCM_URL
+                        connection = POM_SCM_CONNECTION
+                        developerConnection = POM_SCM_DEV_CONNECTION
+                    }
+
+                    // Fix project dependencies to use correct JitPack coordinates
+                    withXml {
+                        def dependenciesNode = asNode().getAt('dependencies')[0]
+                        if (dependenciesNode != null) {
+                            dependenciesNode.children().each { dep ->
+                                def groupIdNode = dep.getAt('groupId')[0]
+                                def artifactIdNode = dep.getAt('artifactId')[0]
+                                // Fix project dependencies (they have null or project group)
+                                if (groupIdNode != null && artifactIdNode != null) {
+                                    def artifactId = artifactIdNode.text()
+                                    if (artifactId == 'core' || artifactId == 'android') {
+                                        groupIdNode.setValue(GROUP)
+                                        dep.getAt('version')[0]?.setValue(getVersionName())
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 }
-
 
 // Only sign when credentials are available (not on JitPack)
 signing {
@@ -85,25 +79,6 @@ signing {
 
 publish.dependsOn build
 publishToMavenLocal.dependsOn build
-
-// Ensure artifacts are built before publishing
-afterEvaluate {
-    if (project.getName() == "android") {
-        tasks.matching { it.name == 'publishReleasePublicationToMavenLocal' }.configureEach {
-            dependsOn 'bundleReleaseAar'
-        }
-        tasks.matching { it.name == 'publishReleasePublicationToSonatypeRepository' }.configureEach {
-            dependsOn 'bundleReleaseAar'
-        }
-    } else {
-        tasks.matching { it.name == 'publishReleasePublicationToMavenLocal' }.configureEach {
-            dependsOn 'jar'
-        }
-        tasks.matching { it.name == 'publishReleasePublicationToSonatypeRepository' }.configureEach {
-            dependsOn 'jar'
-        }
-    }
-}
 
 // Only configure Sonatype publishing if the task exists (not on JitPack)
 tasks.matching { it.name == 'publishToSonatype' }.configureEach {
