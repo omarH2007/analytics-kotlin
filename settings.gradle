@@ -5,3 +5,10 @@ include ':samples:kotlin-android-app-destinations'
 include ':samples:java-android-app'
 include ':samples:kotlin-jvm-app'
 rootProject.name = "Analytics-Android-Next"
+
+dependencyResolutionManagement {
+    repositories {
+        mavenCentral()
+        maven { url = uri("https://jitpack.io") }
+    }
+}
