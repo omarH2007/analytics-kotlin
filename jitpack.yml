@@ -5,5 +5,5 @@ before_install:
 env:
   - JITPACK=true
 install:
-  - ./gradlew :core:publishToMavenLocal :android:publishToMavenLocal -x test -x signReleasePublication
+  - ./gradlew :core:publishToMavenLocal :android:publishToMavenLocal -Prelease -x test -x signReleasePublication
 
