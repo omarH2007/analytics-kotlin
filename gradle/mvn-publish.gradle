@@ -75,10 +75,35 @@ publishing {
 }
 
 
+// Only sign when credentials are available (not on JitPack)
 signing {
+    required { gradle.taskGraph.hasTask("publishToSonatype") }
     sign publishing.publications
 }
 
 publish.dependsOn build
 publishToMavenLocal.dependsOn build
-publishToSonatype.dependsOn publish
+
+// Ensure artifacts are built before publishing
+afterEvaluate {
+    if (project.getName() == "android") {
+        tasks.matching { it.name == 'publishReleasePublicationToMavenLocal' }.configureEach {
+            dependsOn 'bundleReleaseAar'
+        }
+        tasks.matching { it.name == 'publishReleasePublicationToSonatypeRepository' }.configureEach {
+            dependsOn 'bundleReleaseAar'
+        }
+    } else {
+        tasks.matching { it.name == 'publishReleasePublicationToMavenLocal' }.configureEach {
+            dependsOn 'jar'
+        }
+        tasks.matching { it.name == 'publishReleasePublicationToSonatypeRepository' }.configureEach {
+            dependsOn 'jar'
+        }
+    }
+}
+
+// Only configure Sonatype publishing if the task exists (not on JitPack)
+tasks.matching { it.name == 'publishToSonatype' }.configureEach {
+    dependsOn publish
+}

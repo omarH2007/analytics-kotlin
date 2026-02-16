@@ -1,0 +1,9 @@
+jdk:
+  - openjdk11
+before_install:
+  - chmod +x gradlew
+env:
+  - JITPACK=true
+install:
+  - ./gradlew :core:publishToMavenLocal :android:publishToMavenLocal -x test -x signReleasePublication
+
