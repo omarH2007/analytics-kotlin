@@ -17,6 +17,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -51,10 +52,6 @@ open class EventPipeline(
     private val customTrackFileUrlsInFlight = mutableSetOf<String>()
     private val customTrackInFlightMutex = Mutex()
 
-    private companion object {
-        const val MAX_CONCURRENT_EVENT_UPLOADS = 20
-    }
-
     protected open val storage get() = analytics.storage
 
     protected open val scope get() = analytics.analyticsScope
@@ -67,6 +64,7 @@ open class EventPipeline(
         private set
 
     companion object {
+        private const val MAX_CONCURRENT_EVENT_UPLOADS = 20
         internal const val FLUSH_POISON = "#!flush"
         internal val FLUSH_EVENT = ScreenEvent(FLUSH_POISON, FLUSH_POISON, emptyJsonObject).apply { messageId = FLUSH_POISON }
         internal const val UPLOAD_SIG = "#!upload"
