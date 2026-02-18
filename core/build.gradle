@@ -2,6 +2,7 @@ plugins {
     id 'java-library'
     id 'kotlin'
     id 'org.jetbrains.kotlin.plugin.serialization'
+    id 'maven-publish'
 }
 
 java {
@@ -14,6 +15,19 @@ compileKotlin {
         freeCompilerArgs += [
                 "-Xopt-in=kotlin.RequiresOptIn"
         ]
+    }
+}
+
+publishing {
+    publications {
+        core(MavenPublication) {
+            groupId = "com.segment.analytics.kotlin"
+            artifactId = "core"
+            version = "1.24.1-custom"
+
+            // Use the Java component (JAR)
+            from components.java
+        }
     }
 }
 

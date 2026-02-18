@@ -3,6 +3,7 @@ plugins {
     id 'kotlin-android'
     id 'org.jetbrains.kotlin.plugin.serialization'
     id 'de.mannodermaus.android-junit5'
+    id 'maven-publish'
 }
 
 android {
@@ -43,6 +44,19 @@ android {
         }
     }
 
+}
+
+publishing {
+    publications {
+        androidRelease(MavenPublication) {
+            groupId = "com.segment.analytics.kotlin"
+            artifactId = "android"
+            version = "1.24.1-custom"
+
+            // Explicitly point to the AAR file
+            artifact("$buildDir/outputs/aar/android-release.aar")
+        }
+    }
 }
 
 dependencies {
