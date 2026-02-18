@@ -46,15 +46,15 @@ android {
 
 }
 
-publishing {
-    publications {
-        androidRelease(MavenPublication) {
-            groupId = "com.segment.analytics.kotlin"
-            artifactId = "android"
-            version = "1.24.1-custom"
-
-            // Explicitly point to the AAR file
-            artifact("$buildDir/outputs/aar/android-release.aar")
+afterEvaluate {
+    publishing {
+        publications {
+            release(MavenPublication) {
+                groupId = "com.segment.analytics.kotlin"
+                artifactId = "android"
+                version = "1.24.1-custom"
+                artifact("$buildDir/outputs/aar/android-release.aar")
+            }
         }
     }
 }

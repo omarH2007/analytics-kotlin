@@ -3,5 +3,7 @@ jdk:
 
 install:
   - chmod +x gradlew
-  - ./gradlew :core:build :core:publishToMavenLocal -x test
-  - ./gradlew :android:assembleRelease :android:publishToMavenLocal -x test
+  # Build core module (produces .jar)
+  - ./gradlew :core:build -x test
+  # Build android module (produces .aar)
+  - ./gradlew :android:assembleRelease -x test

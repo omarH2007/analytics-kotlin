@@ -25,7 +25,6 @@ publishing {
             artifactId = "core"
             version = "1.24.1-custom"
 
-            // Use the Java component (JAR)
             from components.java
         }
     }
