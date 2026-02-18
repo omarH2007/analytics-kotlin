@@ -1,6 +1,6 @@
-# jitpack.yml
 jdk:
   - openjdk11
 
 install:
+  - chmod +x gradlew
   - ./gradlew :core:assembleRelease :android:assembleRelease -x test
