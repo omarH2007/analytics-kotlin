@@ -1,9 +1,11 @@
 jdk:
   - openjdk11
 
-install:
+before_install:
   - chmod +x gradlew
-  # Build core module (produces .jar)
-  - ./gradlew :core:build -x test
-  # Build android module (produces .aar)
-  - ./gradlew :android:assembleRelease -x test
+
+install:
+  # Build and publish core module first (android depends on it)
+  - ./gradlew :core:build :core:publishToMavenLocal -Prelease -x test
+  # Build and publish android module
+  - ./gradlew :android:build :android:publishToMavenLocal -Prelease -x test

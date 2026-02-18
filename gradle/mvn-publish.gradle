@@ -7,13 +7,70 @@ afterEvaluate {
             release(MavenPublication) {
                 groupId GROUP
                 artifactId POM_ARTIFACT_ID
-                version getVersionName()
+                version rootProject.getVersionName()
 
-                // Use component-based publishing for proper class resolution
+                // For Android libraries, manually attach the AAR to preserve our groupId
+                // Using components.release would override our groupId with AGP's internal coordinates
                 if (project.plugins.hasPlugin('com.android.library')) {
-                    from components.release
+                    artifact("$buildDir/outputs/aar/${project.name}-release.aar")
+
+                    // Manually add dependencies from the android module
+                    pom.withXml {
+                        def dependenciesNode = asNode().appendNode('dependencies')
+
+                        // Add compile dependencies
+                        configurations.api.allDependencies.each { dep ->
+                            if (dep.group != null && dep.name != null) {
+                                def depNode = dependenciesNode.appendNode('dependency')
+                                // Handle project dependencies
+                                if (dep instanceof ProjectDependency) {
+                                    depNode.appendNode('groupId', GROUP)
+                                    depNode.appendNode('artifactId', dep.name)
+                                    depNode.appendNode('version', rootProject.getVersionName())
+                                } else {
+                                    depNode.appendNode('groupId', dep.group)
+                                    depNode.appendNode('artifactId', dep.name)
+                                    depNode.appendNode('version', dep.version ?: '')
+                                }
+                                depNode.appendNode('scope', 'compile')
+                            }
+                        }
+
+                        // Add implementation dependencies as runtime
+                        configurations.implementation.allDependencies.each { dep ->
+                            if (dep.group != null && dep.name != null && !(dep instanceof ProjectDependency)) {
+                                def depNode = dependenciesNode.appendNode('dependency')
+                                depNode.appendNode('groupId', dep.group)
+                                depNode.appendNode('artifactId', dep.name)
+                                depNode.appendNode('version', dep.version ?: '')
+                                depNode.appendNode('scope', 'runtime')
+                            }
+                        }
+                    }
                 } else {
+                    // For JVM/Kotlin libraries, use the java component
                     from components.java
+
+                    // Fix dependencies for core module
+                    pom.withXml {
+                        def dependenciesNode = asNode().getAt('dependencies')[0]
+                        if (dependenciesNode != null) {
+                            dependenciesNode.children().each { dep ->
+                                def depGroupIdNode = dep.getAt('groupId')[0]
+                                def artifactIdNode = dep.getAt('artifactId')[0]
+                                if (depGroupIdNode != null && artifactIdNode != null) {
+                                    def artifactId = artifactIdNode.text()
+                                    if (artifactId == 'core' || artifactId == 'android') {
+                                        depGroupIdNode.setValue(GROUP)
+                                        def versionNode = dep.getAt('version')[0]
+                                        if (versionNode != null) {
+                                            versionNode.setValue(rootProject.getVersionName())
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // Add sources and javadoc
@@ -46,25 +103,6 @@ afterEvaluate {
                         connection = POM_SCM_CONNECTION
                         developerConnection = POM_SCM_DEV_CONNECTION
                     }
-
-                    // Fix project dependencies to use correct JitPack coordinates
-                    withXml {
-                        def dependenciesNode = asNode().getAt('dependencies')[0]
-                        if (dependenciesNode != null) {
-                            dependenciesNode.children().each { dep ->
-                                def groupIdNode = dep.getAt('groupId')[0]
-                                def artifactIdNode = dep.getAt('artifactId')[0]
-                                // Fix project dependencies (they have null or project group)
-                                if (groupIdNode != null && artifactIdNode != null) {
-                                    def artifactId = artifactIdNode.text()
-                                    if (artifactId == 'core' || artifactId == 'android') {
-                                        groupIdNode.setValue(GROUP)
-                                        dep.getAt('version')[0]?.setValue(getVersionName())
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -79,6 +117,16 @@ signing {
 
 publish.dependsOn build
 publishToMavenLocal.dependsOn build
+
+// For Android modules, ensure assembleRelease runs before publishing
+if (project.plugins.hasPlugin('com.android.library')) {
+    tasks.matching { it.name == 'publishReleasePublicationToMavenLocal' }.configureEach {
+        dependsOn 'assembleRelease'
+    }
+    tasks.matching { it.name == 'publishReleasePublicationToMavenRepository' }.configureEach {
+        dependsOn 'assembleRelease'
+    }
+}
 
 // Only configure Sonatype publishing if the task exists (not on JitPack)
 tasks.matching { it.name == 'publishToSonatype' }.configureEach {

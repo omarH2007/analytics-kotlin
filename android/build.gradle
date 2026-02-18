@@ -46,18 +46,6 @@ android {
 
 }
 
-afterEvaluate {
-    publishing {
-        publications {
-            release(MavenPublication) {
-                groupId = "com.segment.analytics.kotlin"
-                artifactId = "android"
-                version = "1.24.1-custom"
-                artifact("$buildDir/outputs/aar/android-release.aar")
-            }
-        }
-    }
-}
 
 dependencies {
     // MAIN DEPS

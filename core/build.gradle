@@ -18,17 +18,6 @@ compileKotlin {
     }
 }
 
-publishing {
-    publications {
-        core(MavenPublication) {
-            groupId = "com.segment.analytics.kotlin"
-            artifactId = "core"
-            version = "1.24.1-custom"
-
-            from components.java
-        }
-    }
-}
 
 test {
     useJUnitPlatform()
