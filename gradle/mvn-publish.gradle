@@ -1,5 +1,8 @@
 apply plugin: 'maven-publish'
-apply plugin: 'signing'
+def signingEnabled = project.findProperty('signing.keyId')?.toString()?.trim()
+if (signingEnabled) {
+    apply plugin: 'signing'
+}
 
 publishing {
     publications {
@@ -75,11 +78,20 @@ publishing {
 }
 
 
-signing {
-    required { project.hasProperty('signing.keyId') }
-    sign publishing.publications
+if (signingEnabled) {
+    signing {
+        sign publishing.publications
+    }
 }
+
 
 publish.dependsOn build
 publishToMavenLocal.dependsOn build
-publishToSonatype.dependsOn publish
+
+tasks.matching { it.name == 'publishReleasePublicationToMavenLocal' }.configureEach {
+    dependsOn build
+}
+
+if (tasks.findByName('publishToSonatype') != null) {
+    publishToSonatype.dependsOn publish
+}

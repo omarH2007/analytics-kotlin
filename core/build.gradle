@@ -41,6 +41,6 @@ apply from: rootProject.file('gradle/artifacts-core.gradle')
 apply from: rootProject.file('gradle/mvn-publish.gradle')
 apply from: rootProject.file('gradle/codecov.gradle')
 
-tasks.named("signReleasePublication") {
+tasks.matching { it.name == "signReleasePublication" }.configureEach {
     dependsOn("jar")
 }
