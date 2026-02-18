@@ -1,9 +1,6 @@
+# jitpack.yml
 jdk:
   - openjdk11
-before_install:
-  - chmod +x gradlew
-env:
-  - JITPACK=true
-install:
-  - ./gradlew :core:publishToMavenLocal :android:publishToMavenLocal -Prelease -x test -x signReleasePublication
 
+install:
+  - ./gradlew :core:assembleRelease :android:assembleRelease -x test
