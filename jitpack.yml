@@ -1,4 +1,4 @@
 jdk:
   - openjdk17
 install:
-  - ./gradlew :core:publishToMavenLocal :android:publishToMavenLocal -x signReleasePublication -x test
+  - ./gradlew :core:publishToMavenLocal :android:publishToMavenLocal -x test
