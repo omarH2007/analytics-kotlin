@@ -172,6 +172,15 @@ open class RequestFactory(
         .readTimeout(20, TimeUnit.SECONDS)
         .build()
 
+    /** customTrackUrl events are sent at most once: OkHttp must never retry them or follow a redirect (a redirect is a failure). */
+    private val customTrackOkHttpClient by lazy {
+        okHttpClient.newBuilder()
+            .retryOnConnectionFailure(false)
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .build()
+    }
+
     open fun settings(cdnHost: String, writeKey: String): HttpURLConnection {
         val connection: HttpURLConnection = openConnection("https://$cdnHost/projects/$writeKey/settings")
         connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
@@ -198,6 +207,7 @@ open class RequestFactory(
      */
     open fun uploadToCustomTrackUrl(customTrackUrl: URL, writeKey: String): HttpURLConnection {
         val connection: HttpURLConnection = openConnection(customTrackUrl.toString())
+        (connection as? OkHttpURLConnection)?.sendAtMostOnce(customTrackOkHttpClient)
         connection.requestMethod = "POST"
         connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
         connection.setRequestProperty("X-Write-Key", writeKey)

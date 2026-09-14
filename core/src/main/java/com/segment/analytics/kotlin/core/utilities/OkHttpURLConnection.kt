@@ -1,11 +1,14 @@
 package com.segment.analytics.kotlin.core.utilities
 
+import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okio.Buffer
+import okio.BufferedSink
 import okio.GzipSink
 import okio.buffer
 import java.io.IOException
@@ -19,12 +22,13 @@ import kotlin.io.readBytes
 
 internal class OkHttpURLConnection(
     url: URL,
-    private val client: OkHttpClient
+    private var client: OkHttpClient
 ) : HttpURLConnection(url) {
 
     private var response: Response? = null
     private var requestBodyBuffer: Buffer? = null
     private var connected = false
+    private var oneShotBody = false
 
     private val requestBuilder = Request.Builder().url(url)
     private val requestProperties = mutableMapOf<String, MutableList<String>>()
@@ -46,6 +50,15 @@ internal class OkHttpURLConnection(
     }
 
     override fun usingProxy(): Boolean = false
+
+    /**
+     * Sends this request at most once: through [noRetryClient] (no retry on connection failure, no redirects)
+     * and with a one-shot body, which OkHttp never sends again (not even for a 408 or 503 Retry-After: 0).
+     */
+    internal fun sendAtMostOnce(noRetryClient: OkHttpClient) {
+        client = noRetryClient
+        oneShotBody = true
+    }
 
     @Throws(IOException::class)
     override fun connect() {
@@ -79,7 +92,7 @@ internal class OkHttpURLConnection(
                         ?: "text/plain".toMediaType()
                     buffer.readByteArray().toRequestBody(mediaType)
                 } ?: "".toRequestBody("text/plain".toMediaType())
-                builder.post(body)
+                builder.post(if (oneShotBody) body.oneShot() else body)
             }
             "PUT" -> {
                 val body = requestBodyBuffer?.readByteArray()?.toRequestBody(
@@ -375,4 +388,11 @@ internal class OkHttpURLConnection(
 
         return content
     }
+}
+
+private fun RequestBody.oneShot(): RequestBody = object : RequestBody() {
+    override fun contentType(): MediaType? = this@oneShot.contentType()
+    override fun contentLength(): Long = this@oneShot.contentLength()
+    override fun isOneShot(): Boolean = true
+    override fun writeTo(sink: BufferedSink) = this@oneShot.writeTo(sink)
 }
