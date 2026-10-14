@@ -6,6 +6,7 @@ import com.segment.analytics.kotlin.core.platform.plugins.logger.log
 import com.segment.analytics.kotlin.core.platform.plugins.logger.segmentLog
 import com.segment.analytics.kotlin.core.platform.policies.FlushPolicy
 import com.segment.analytics.kotlin.core.utilities.EncodeDefaultsJson
+import com.segment.analytics.kotlin.core.utilities.SegmentInstant
 import com.segment.analytics.kotlin.core.utilities.StorageImpl
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -20,6 +21,9 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -264,6 +268,8 @@ open class EventPipeline(
         val json = Json.parseToJsonElement(batchContent).jsonObject
         val batch = json["batch"]?.jsonArray ?: return@withContext
         if (batch.isEmpty()) return@withContext
+        // sentAt lives on the batch and a guest has no userId, the events proxy needs both on each event
+        val sentAt = json["sentAt"] ?: JsonPrimitive(SegmentInstant.now())
 
         val semaphore = Semaphore(MAX_CONCURRENT_EVENT_UPLOADS)
         val failures = coroutineScope {
@@ -271,7 +277,10 @@ open class EventPipeline(
                 async {
                     semaphore.withPermit<Exception?> {
                         try {
-                            val eventBody = element.toString()
+                            val event = element.jsonObject.toMutableMap()
+                            event["sentAt"] = sentAt
+                            if (!event.containsKey("userId")) event["userId"] = JsonNull
+                            val eventBody = JsonObject(event).toString()
                             val conn = httpClient.uploadToCustomTrackUrl() ?: return@withPermit null
                             try {
                                 conn.outputStream.use { os ->

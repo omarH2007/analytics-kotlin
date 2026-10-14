@@ -13,6 +13,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterEach
@@ -123,6 +124,26 @@ internal class CustomTrackUrlEventPipelineTest {
         }
         assertTrue(p.pendingBatches().isEmpty())
         verify(exactly = 3) { p.requestFactory.uploadToCustomTrackUrl(any(), any()) }
+    }
+
+    @Test
+    fun `every event carries the batch sentAt and a userId`() {
+        val p = makePipeline("customTrackSentAt") { 200 }
+
+        p.pipeline.put(screen("SentAt Guest"))
+        p.pipeline.put(screen("SentAt User").apply { userId = "user-1" })
+        p.pipeline.flush()
+
+        val bodies = p.sentBodies.map { Json.parseToJsonElement(it).jsonObject }
+        assertEquals(2, bodies.size)
+        val sentAts = bodies.map { it["sentAt"]?.jsonPrimitive?.content }
+        assertTrue(sentAts.all { !it.isNullOrBlank() }, "Each event carries the batch sentAt")
+        assertEquals(1, sentAts.distinct().size, "Events of one batch share its sentAt")
+
+        val guest = bodies.first { it["name"]?.jsonPrimitive?.content == "SentAt Guest" }
+        assertEquals(JsonNull, guest["userId"], "A guest event sends userId as null")
+        val user = bodies.first { it["name"]?.jsonPrimitive?.content == "SentAt User" }
+        assertEquals("user-1", user["userId"]?.jsonPrimitive?.content)
     }
 
     @Test
